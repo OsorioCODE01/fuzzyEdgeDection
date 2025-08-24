@@ -46,13 +46,28 @@ pip install -r requirements.txt
 
 ### 1. Detección de bordes difusa
 Detecta bordes en cualquier imagen usando lógica difusa. Ejemplo:
+
+**Para ver los gráficos de forma interactiva:**
+```bash
+python fuzzy_edge_detection.py --image peppers.png
+```
+
+**Para guardar los resultados sin mostrarlos:**
 ```bash
 python fuzzy_edge_detection.py --image peppers.png --save_dir ./test/ --samples 200
 ```
+
+**Para ver y guardar los resultados:**
+```bash
+python fuzzy_edge_detection.py --image peppers.png --save_dir ./test/ --show
+```
+
 Parámetros útiles:
 - `--image <archivo>`: imagen de entrada
 - `--save_dir <carpeta>`: carpeta donde se guardan los resultados
+- `--show`: mostrar gráficos de forma interactiva
 - `--samples <n>`: cantidad de muestras para graficar funciones
+- `--no_plots`: omitir la generación de gráficos
 
 ### 2. Resolución automática de Sudoku
 Detecta y resuelve un Sudoku desde una foto. Ejemplo:

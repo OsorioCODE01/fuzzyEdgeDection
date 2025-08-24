@@ -65,9 +65,19 @@ from typing import Tuple
 
 import cv2
 import numpy as np
+import matplotlib
 import matplotlib.pyplot as plt
 
 from tinyfuzzy import gaussmf, trimf
+
+# Set interactive backend if available, fall back to Agg if not
+try:
+    matplotlib.use('TkAgg')
+except ImportError:
+    try:
+        matplotlib.use('Qt5Agg')
+    except ImportError:
+        matplotlib.use('Agg')  # Non-interactive fallback
 
 
 def load_image_grayscale(path: str) -> np.ndarray:
@@ -329,6 +339,7 @@ def main() -> None:
     parser.add_argument("--no_plots", action="store_true", help="Skip plotting results")
     parser.add_argument("--save_dir", type=str, default=None,
                         help="Directory to save output images instead of displaying")
+    parser.add_argument("--show", action="store_true", help="Show plots interactively (default behavior when no save_dir is specified)")
     args = parser.parse_args()
 
     # Load and preprocess the image
@@ -352,13 +363,17 @@ def main() -> None:
     # If the user wants plots, generate them
     if not args.no_plots:
         save_dir = args.save_dir
+        show_plots = args.show or (save_dir is None)  # Show by default if no save_dir specified
+        
         if save_dir is not None and not os.path.isdir(save_dir):
             os.makedirs(save_dir, exist_ok=True)
+        
         # Plot membership functions
         mfp = None
         if save_dir:
             mfp = os.path.join(save_dir, "membership_functions.png")
         plot_membership_functions(args.sx, args.sy, args.wa, args.wb, args.wc, args.ba, args.bb, args.bc, save_path=mfp)
+        
         # Plot gradients and results
         fig2, axes2 = plt.subplots(2, 2, figsize=(10, 8))
         # Original grayscale
@@ -378,11 +393,15 @@ def main() -> None:
         axes2[1, 1].set_title("Detección de bordes mediante lógica difusa")
         axes2[1, 1].axis('off')
         fig2.tight_layout()
+        
         if save_dir:
             fig2.savefig(os.path.join(save_dir, "edge_detection_results.png"), bbox_inches="tight")
-            plt.close(fig2)
-        else:
+        
+        if show_plots:
             plt.show()
+        
+        if save_dir and not show_plots:
+            plt.close(fig2)
 
 
 if __name__ == "__main__":
