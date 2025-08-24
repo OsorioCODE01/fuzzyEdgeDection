@@ -6,7 +6,7 @@ Este proyecto implementa un sistema de detección y resolución de Sudoku utiliz
 
 - **Detección de bordes difusa**: Usa lógica difusa para encontrar bordes en imágenes
 - **Resolución de Sudoku**: Detecta automáticamente un tablero de Sudoku en una foto y lo resuelve
-- **Reconocimiento de dígitos**: Identifica números usando machine learning
+- **Reconocimiento de dígitos**: Identifica números usando machine learning ( otras formas se estan revisando )
 
 ## Archivos principales
 
@@ -42,15 +42,31 @@ pip install -r requirements.txt
 
 ## Uso básico
 
-### Detección de bordes
-```python
-python fuzzy_edge_detection.py
-```
+## Cómo usar los programas
 
-### Resolver Sudoku
-```python
-python fuzzy_sudoku_solver.py
+### 1. Detección de bordes difusa
+Detecta bordes en cualquier imagen usando lógica difusa. Ejemplo:
+```bash
+python fuzzy_edge_detection.py --image peppers.png --save_dir ./test/ --samples 200
 ```
+Parámetros útiles:
+- `--image <archivo>`: imagen de entrada
+- `--save_dir <carpeta>`: carpeta donde se guardan los resultados
+- `--samples <n>`: cantidad de muestras para graficar funciones
+
+### 2. Resolución automática de Sudoku
+Detecta y resuelve un Sudoku desde una foto. Ejemplo:
+```bash
+python fuzzy_sudoku_solver.py --image sudoku.jpg --save_dir ./test/
+```
+Parámetros útiles:
+- `--image <archivo>`: imagen del Sudoku
+- `--save_dir <carpeta>`: carpeta donde se guardan los resultados
+
+Ambos scripts muestran imágenes de diagnóstico y guardan los resultados en la carpeta indicada.
+
+## ¿Por qué se usa machine learning?
+Se utiliza machine learning para reconocer los números escritos en el tablero de Sudoku. Por ahora, es una forma sencilla de intentar capturar los dígitos automáticamente a partir de la imagen, usando un clasificador básico. Esto permite que el sistema resuelva el Sudoku sin intervención manual.
 
 ## Dependencias
 
@@ -81,4 +97,3 @@ pip install scikit-learn
 2. Clona este repositorio
 3. Crea el entorno virtual y actívalo
 4. Instala las dependencias con `pip install -r requirements.txt`
-5. ¡Listo para usar!
