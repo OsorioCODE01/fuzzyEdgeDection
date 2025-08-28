@@ -221,31 +221,6 @@ def warp_sudoku(
     return warped, M
 
 
-def prepare_digit_classifier():
-    """Train a simple k‑nearest neighbours classifier on the sklearn digits dataset.
-
-    The digits dataset contains 8×8 grayscale images of the digits 0–9.  We
-    flatten each image into a 64‑dimensional vector and train a kNN
-    classifier with k=3.  The classifier object exposes a ``predict``
-    method that accepts an array of flattened digit images and returns
-    predicted labels.
-
-    Returns
-    -------
-    model : sklearn.neighbors.KNeighborsClassifier
-        Trained classifier.
-    """
-    from sklearn.datasets import load_digits
-    from sklearn.neighbors import KNeighborsClassifier
-    digits = load_digits()
-    X = digits.data.astype(np.float32)
-    # Normalise pixel values to [0, 1]
-    X /= 16.0
-    y = digits.target
-    # Train kNN with k=3
-    knn = KNeighborsClassifier(n_neighbors=3)
-    knn.fit(X, y)
-    return knn
 
 
 def extract_cell_digit(cell: np.ndarray) -> Tuple[np.ndarray, bool]:
@@ -305,27 +280,9 @@ def extract_cell_digit(cell: np.ndarray) -> Tuple[np.ndarray, bool]:
     return digit_normalised, True
 
 
-def recognise_digits(board: np.ndarray, classifier) -> np.ndarray:
-    """Recognise digits in a rectified 450×450 Sudoku board.
-
-    Parameters
-    ----------
-    board : ndarray of shape (450, 450)
-        Warped grayscale Sudoku board.
-    classifier : object
-        A trained classifier with a ``predict`` method taking an array of
-        flattened 8×8 images and returning digit labels.
-
-    Returns
-    -------
-    grid : ndarray of shape (9, 9)
-        Recognised digits, with zeros for empty cells.
-    """
+def recognise_digits(board: np.ndarray) -> np.ndarray:
     grid = np.zeros((9, 9), dtype=int)
-    # Compute cell size
     cell_size = board.shape[0] // 9
-    samples = []
-    positions = []
     for i in range(9):
         for j in range(9):
             y = i * cell_size
@@ -333,15 +290,87 @@ def recognise_digits(board: np.ndarray, classifier) -> np.ndarray:
             cell = board[y:y + cell_size, x:x + cell_size]
             digit_img, has_digit = extract_cell_digit(cell)
             if has_digit:
-                samples.append(digit_img.flatten())
-                positions.append((i, j))
-    if samples:
-        X = np.stack(samples)
-        preds = classifier.predict(X)
-        for pos, label in zip(positions, preds):
-            # Only digits 1–9 are valid; digits dataset includes 0
-            grid[pos] = int(label)
+                grid[i, j] = fuzzy_digit_identifier(digit_img)
     return grid
+
+def fuzzy_digit_identifier(digit_img: np.ndarray) -> int:
+    import cv2
+    digit_bin = (digit_img > 0.5).astype(np.uint8) * 255
+    contours, _ = cv2.findContours(digit_bin, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    metrics = {
+        "vertical": np.sum(digit_img[:, 3:5]),
+        "horizontal": np.sum(digit_img[3:5, :]),
+        "left_area": np.sum(digit_img[:, :2]),
+        "right_area": np.sum(digit_img[:, 6:]),
+        "top_area": np.sum(digit_img[:2, :]),
+        "bottom_area": np.sum(digit_img[6:, :]),
+        "center_area": np.sum(digit_img[2:6, 2:6]),
+        "percent_white": np.sum(digit_img > 0.5) / digit_img.size,
+        "num_components": len(contours),
+        "vert_sym": np.sum(np.abs(digit_img - np.flip(digit_img, axis=1))),
+        "hor_sym": np.sum(np.abs(digit_img - np.flip(digit_img, axis=0))),
+    }
+
+    # Imprimir métricas para depuración
+    print(f"Métricas celda: {metrics}")
+
+    # 1. Filtrar saturados
+    if metrics["percent_white"] < 0.10 or metrics["percent_white"] > 0.95:
+        print(f"Detectado: vacío | {metrics}")
+        return 0
+
+    # 2. Separar por componentes (más permisivo)
+    if metrics["num_components"] >= 2 and metrics["center_area"] > 10 and metrics["vert_sym"] < 15 and metrics["hor_sym"] < 15:
+        print(f"Detectado: 8 | {metrics}")
+        return 8
+
+    # 3. Reglas afinadas para dígitos 1, 3 y 9
+    # --- 1 ---
+    # Alta verticalidad, extremos vacíos, simetría vertical baja
+    if metrics["vertical"] > 15 and metrics["left_area"] < 5 and metrics["right_area"] < 5 and metrics["vert_sym"] < 8:
+        print(f"Detectado: 1 | {metrics}")
+        return 1
+
+    # --- 3 ---
+    # Más blanco a la derecha, centro medio, simetría vertical moderada
+    if metrics["right_area"] > metrics["left_area"] + 2 and metrics["center_area"] > 7 and metrics["vert_sym"] > 8 and metrics["top_area"] > 5 and metrics["bottom_area"] > 5:
+        print(f"Detectado: 3 | {metrics}")
+        return 3
+
+    # --- 9 ---
+    # Centro lleno, más blanco arriba, simetría vertical alta
+    if metrics["center_area"] > 10 and metrics["top_area"] > metrics["bottom_area"] and metrics["bottom_area"] < 7 and metrics["vert_sym"] > 12:
+        print(f"Detectado: 9 | {metrics}")
+        return 9
+
+    # --- 7 ---
+    if metrics["top_area"] > 6 and metrics["center_area"] < 7 and metrics["bottom_area"] < 7:
+        print(f"Detectado: 7 | {metrics}")
+        return 7
+    # --- 5 ---
+    if metrics["horizontal"] > 6 and metrics["right_area"] > metrics["left_area"] and metrics["top_area"] < 7:
+        print(f"Detectado: 5 | {metrics}")
+        return 5
+
+    # 4. Reglas para dígitos ambiguos (más permisivo)
+    if digit_img[0,0] > 0.4 and digit_img[7,7] > 0.4 and metrics["vert_sym"] < 15 and metrics["hor_sym"] < 15 and metrics["center_area"] < 10:
+        print(f"Detectado: 4 | {metrics}")
+        return 4
+    if metrics["horizontal"] > 6 and metrics["left_area"] > metrics["right_area"] and metrics["top_area"] < 7:
+        print(f"Detectado: 2 | {metrics}")
+        return 2
+    if metrics["center_area"] > 8 and metrics["bottom_area"] > metrics["top_area"] and metrics["top_area"] < 7:
+        print(f"Detectado: 6 | {metrics}")
+        return 6
+
+    # 0: simétrico, centro y extremos llenos (más permisivo)
+    if metrics["vert_sym"] < 10 and metrics["hor_sym"] < 10 and metrics["center_area"] > 10 and metrics["left_area"] > 8 and metrics["right_area"] > 8:
+        print(f"Detectado: 0 | {metrics}")
+        return 0
+
+    # 5. Fallback visual
+    print(f"Detectado: no identificado | {metrics}")
+    return 0
 
 
 def is_valid(board: np.ndarray, row: int, col: int, num: int) -> bool:
@@ -520,72 +549,75 @@ def main() -> None:
     warped_board, M = warp_sudoku((gray * 255).astype(np.uint8), corners)
     print("Perspectiva rectificada")
     
-    # Train classifier
-    print("Entrenando clasificador de dígitos...")
-    clf = prepare_digit_classifier()
-    print("Clasificador entrenado")
-    
-    # Recognise digits
-    print("Reconociendo dígitos en el tablero...")
-    digits_grid = recognise_digits(warped_board, clf)
+    # Aplicar detección de bordes sobre el tablero rectificado para mejorar la segmentación de dígitos
+    print("Aplicando detección de bordes sobre el tablero rectificado...")
+    Ix2, Iy2 = compute_gradients(warped_board / 255.0)
+    edge_map_board = fuzzy_edge_detection(
+        Ix2, Iy2,
+        sx=0.07,  # Parámetros ajustados para celdas pequeñas
+        sy=0.07,
+        wa=0.1,
+        wb=1.0,
+        wc=1.0,
+        ba=0.0,
+        bb=0.0,
+        bc=0.7,
+        sample_points=21,
+        dtype=np.float32,
+    )
+    edge_norm_board = cv2.normalize(edge_map_board, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+    _, edge_bin_board = cv2.threshold(edge_norm_board, int(0.25 * 255), 255, cv2.THRESH_BINARY_INV)
+    kernel2 = np.ones((3, 3), np.uint8)
+    edge_bin_board = cv2.morphologyEx(edge_bin_board, cv2.MORPH_CLOSE, kernel2)
+    print("Bordes en tablero rectificado generados")
+
+    # Usar el edge_bin_board para extraer los dígitos
+    print("Reconociendo dígitos en el tablero (lógica difusa, usando bordes del tablero rectificado)...")
+    digits_grid = recognise_digits(edge_bin_board)
     print("Reconocimiento de dígitos completado")
-    
-    # Mostrar los dígitos detectados
+
+    # Guardar imágenes de las celdas para análisis visual
+    save_cells_dir = args.save_dir or "test"
+    os.makedirs(save_cells_dir, exist_ok=True)
+    cell_size = edge_bin_board.shape[0] // 9
+    for i in range(9):
+        for j in range(9):
+            y = i * cell_size
+            x = j * cell_size
+            cell_img = edge_bin_board[y:y + cell_size, x:x + cell_size]
+            cv2.imwrite(os.path.join(save_cells_dir, f"cell_{i+1}_{j+1}.png"), cell_img)
+    print(f"Imágenes de celdas guardadas en: {save_cells_dir}")
+    # Intentar resolver el tablero
     print_sudoku_grid(digits_grid, "🔢 DÍGITOS DETECTADOS EN EL TABLERO")
-    
-    # Contar dígitos detectados
     detected_count = np.count_nonzero(digits_grid)
     print(f"Se detectaron {detected_count} dígitos en el tablero")
-    
-    # Solve Sudoku
-    print("Resolviendo Sudoku...")
-    board_copy = digits_grid.copy()
-    if args.verbose:
-        print("Mostrando pasos detallados del algoritmo de backtracking:")
-    solved = solve_sudoku(board_copy, verbose=args.verbose)
-    
-    if not solved:
-        print("No se encontró solución para el puzzle de Sudoku detectado.")
-        solution = board_copy
+    print_sudoku_grid(digits_grid, "CUADRÍCULA DETECTADA (sin resolver)")
+    print("\nIntentando resolver el tablero...")
+    board_to_solve = digits_grid.copy()
+    solved = solve_sudoku(board_to_solve, verbose=args.verbose)
+    if solved:
+        print_sudoku_grid(board_to_solve, "SOLUCIÓN DEL SUDOKU")
+        # Guardar imagen del tablero recortado
+        cv2.imwrite(os.path.join(save_cells_dir, "warped_board.png"), warped_board)
+        # Generar y guardar imagen con la solución sobrepuesta
+        solution_img = draw_solution(warped_board, board_to_solve)
+        cv2.imwrite(os.path.join(save_cells_dir, "solution.png"), solution_img)
+        print(f"Imagen del tablero recortado guardada en: {save_cells_dir}/warped_board.png")
+        print(f"Imagen de la solución sobrepuesta guardada en: {save_cells_dir}/solution.png")
     else:
-        print("¡Sudoku resuelto exitosamente!")
-        solution = board_copy
-        
-    # Mostrar la solución
-    print_sudoku_grid(solution, "SOLUCIÓN ENCONTRADA")
-    # Draw solution on warped board
-    solved_img = draw_solution(warped_board, solution)
-    # Optionally save results
-    if args.save_dir:
-        print(f"\n💾 Guardando resultados en: {args.save_dir}")
-        os.makedirs(args.save_dir, exist_ok=True)
-        # Save detected board overlayed on original
-        overlay = cv2.cvtColor((gray * 255).astype(np.uint8), cv2.COLOR_GRAY2BGR)
-        cv2.drawContours(overlay, [contour], -1, (0, 255, 0), 3)
-        cv2.imwrite(os.path.join(args.save_dir, "detected_board.png"), overlay)
-        cv2.imwrite(os.path.join(args.save_dir, "warped_board.png"), warped_board)
-        cv2.imwrite(os.path.join(args.save_dir, "solution.png"), solved_img)
-        print("✅ Resultados guardados exitosamente")
-    # Display results (optional if no save_dir)
-    if not args.save_dir:
-        print("\n📊 Mostrando resultados visuales...")
-        plt.figure(figsize=(12, 4))
-        plt.subplot(1, 3, 1)
-        plt.imshow(edge_norm, cmap='gray')
-        plt.title('Edge map')
-        plt.axis('off')
-        plt.subplot(1, 3, 2)
-        plt.imshow(warped_board, cmap='gray')
-        plt.title('Warped board')
-        plt.axis('off')
-        plt.subplot(1, 3, 3)
-        plt.imshow(cv2.cvtColor(solved_img, cv2.COLOR_BGR2RGB))
-        plt.title('Solved Sudoku')
-        plt.axis('off')
-        plt.tight_layout()
-        plt.show()
+        print("No se pudo encontrar una solución. El tablero es muy complejo o insuficiente información.")
+    # Crear imagen mosaico con todas las celdas juntas en escala de grises
+    create_cells_grid_image(edge_bin_board, cell_size, save_cells_dir)
+def create_cells_grid_image(board_img, cell_size, output_dir):
+    """
+    Crea una imagen mosaico con todas las celdas del Sudoku en escala de grises y la guarda en output_dir.
+    """
+    import numpy as np
+    import cv2
+    # El tablero ya está segmentado en edge_bin_board, así que solo lo guardamos como imagen general
+    cv2.imwrite(os.path.join(output_dir, "all_cells_grid.png"), board_img)
+    print(f"Imagen mosaico de todas las celdas guardada en: {output_dir}/all_cells_grid.png")
     
-    print("\n🎉 ¡Proceso completado!")
 
 
 if __name__ == "__main__":
