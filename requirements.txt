@@ -1,17 +1,4 @@
-# Dependencias para el proyecto de detección de sudoku con lógica difusa
 
-# Procesamiento de imágenes y visión por computadora
 opencv-python>=4.8.0
-
-# Computación numérica
 numpy>=1.24.0
-
-# Visualización y gráficos
 matplotlib>=3.7.0
-
-# Machine learning para reconocimiento de dígitos
-scikit-learn>=1.3.0
-
-# Opcional: para mejorar el reconocimiento óptico de caracteres
-# pytesseract>=0.3.10
-# Pillow>=10.0.0
