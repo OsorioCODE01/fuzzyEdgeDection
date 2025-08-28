@@ -88,7 +88,6 @@ Se utiliza machine learning para reconocer los números escritos en el tablero d
 - `opencv-python` - Procesamiento de imágenes
 - `numpy` - Operaciones numéricas
 - `matplotlib` - Visualización
-- `scikit-learn` - Machine learning
 
 ## Problemas comunes
 
@@ -96,15 +95,6 @@ Se utiliza machine learning para reconocer los números escritos en el tablero d
 ```bash
 pip install opencv-python
 ```
-
-**Error: "No module named 'sklearn'"**
-```bash
-pip install scikit-learn
-```
-
-**¿El Sudoku no se detecta bien?**
-- Asegúrate de que la imagen tenga buena iluminación
-- El tablero debe estar bien visible y contrastado
 
 ## Para usar en otro equipo
 
